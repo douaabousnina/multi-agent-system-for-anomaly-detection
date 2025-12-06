@@ -26,41 +26,7 @@ public class MobileAuditAgent extends Agent {
         System.out.println("Container actuel: " + originContainer);
         System.out.println("Cible: " + targetNode);
 
-        // Migrer vers le nœud cible
-        addBehaviour(new OneShotBehaviour() {
-            public void action() {
-                migrateToTarget();
-            }
-        });
-    }
-
-    private void migrateToTarget() {
-        try {
-            // Trouver le container cible
-            String targetContainerName = "Container-" + targetNode;
-            
-            System.out.println("Tentative de migration vers: " + targetContainerName);
-            
-            // Créer l'objet Location pour le container cible
-            Location destination = new jade.core.ContainerID(targetContainerName, null);
-            
-            // Effectuer la migration
-            doMove(destination);
-            
-        } catch (Exception e) {
-            System.err.println("Erreur lors de la migration: " + e.getMessage());
-            e.printStackTrace();
-            // Si la migration échoue, effectuer l'audit localement
-            performAudit();
-        }
-    }
-
-    protected void afterMove() {
-        System.out.println("===================================");
-        System.out.println("Agent mobile arrivé sur: " + here().getName());
-        System.out.println("===================================");
-
-        // Effectuer l'audit sur le nœud cible
+        // Effectuer l'audit immédiatement (pas de migration)
         addBehaviour(new OneShotBehaviour() {
             public void action() {
                 performAudit();
@@ -68,6 +34,7 @@ public class MobileAuditAgent extends Agent {
         });
     }
 
+    
     private void performAudit() {
         System.out.println("*** DÉBUT DE L'AUDIT SUR " + targetNode + " ***");
         

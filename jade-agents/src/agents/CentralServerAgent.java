@@ -26,14 +26,11 @@ public class CentralServerAgent extends Agent {
         // Enregistrer dans le DF
         registerInDF();
         
-        // Ajouter comportement de réception d'alertes
-        addBehaviour(new ReceiveAlertsBehaviour());
+        // Ajouter comportement de réception de messages (unifié)
+        addBehaviour(new ReceiveMessagesBehaviour());
         
-        // Ajouter comportement d'analyse périodique
-        addBehaviour(new AnalyzeBehaviour());
-        
-        // Ajouter comportement de réception des rapports d'audit
-        addBehaviour(new ReceiveAuditReportsBehaviour());
+        // Ajouter comportement d'analyse périodique (pour cleanup et stats)
+        addBehaviour(new PeriodicAnalysisBehaviour());
     }
     
     private void registerInDF() {
@@ -52,48 +49,51 @@ public class CentralServerAgent extends Agent {
         }
     }
     
-    private class ReceiveAlertsBehaviour extends CyclicBehaviour {
+    // COMPORTEMENT UNIFIÉ - Reçoit TOUS les messages INFORM
+    private class ReceiveMessagesBehaviour extends CyclicBehaviour {
         
         public void action() {
-            MessageTemplate mt = MessageTemplate.and(
-                MessageTemplate.MatchPerformative(ACLMessage.INFORM),
-                MessageTemplate.MatchContent("ALERT*")
-            );
+            // Recevoir TOUS les messages INFORM
+            MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.INFORM);
             ACLMessage msg = receive(mt);
             
             if (msg != null) {
                 String content = msg.getContent();
-                System.out.println("\n⚠ ALERTE REÇUE: " + content);
-                processAlert(content);
+                
+                // Router selon le type de message
+                if (content != null) {
+                    if (content.startsWith("ALERT:")) {
+                        handleAlert(content);
+                    } else if (content.startsWith("AUDIT_REPORT:")) {
+                        handleAuditReport(content);
+                    } else {
+                        System.out.println("⚠ Message non reconnu: " + content);
+                    }
+                }
             } else {
                 block();
             }
         }
-    }
-    
-    private class ReceiveAuditReportsBehaviour extends CyclicBehaviour {
         
-        public void action() {
-            MessageTemplate mt = MessageTemplate.and(
-                MessageTemplate.MatchPerformative(ACLMessage.INFORM),
-                MessageTemplate.MatchContent("AUDIT_REPORT*")
-            );
-            ACLMessage msg = receive(mt);
+        private void handleAlert(String alertContent) {
+            System.out.println("\n⚠ ALERTE REÇUE: " + alertContent);
+            processAlert(alertContent);
             
-            if (msg != null) {
-                String content = msg.getContent();
-                System.out.println("\n📊 RAPPORT D'AUDIT REÇU:");
-                System.out.println(content);
-                processAuditReport(content);
-            } else {
-                block();
-            }
+            // ANALYSE IMMÉDIATE après chaque alerte!
+            checkAndDeployAgent(alertContent);
+        }
+        
+        private void handleAuditReport(String reportContent) {
+            System.out.println("\n📊 RAPPORT D'AUDIT REÇU:");
+            System.out.println(reportContent);
+            processAuditReport(reportContent);
         }
     }
     
-    private class AnalyzeBehaviour extends TickerBehaviour {
+    // Comportement périodique pour statistiques et cleanup
+    private class PeriodicAnalysisBehaviour extends TickerBehaviour {
         
-        public AnalyzeBehaviour() {
+        public PeriodicAnalysisBehaviour() {
             super(CentralServerAgent.this, 30000); // Toutes les 30 secondes
         }
         
@@ -105,22 +105,17 @@ public class CentralServerAgent extends Agent {
                 return;
             }
             
-            // Analyser toutes les alertes
+            // Afficher les statistiques
             for (String nodeId : alerts.keySet()) {
                 AlertData alert = alerts.get(nodeId);
-                
-                System.out.println("Node " + nodeId + ": " + alert.count + " alertes");
-                
-                // Si 3 alertes ou plus et pas encore audité
-                if (alert.count >= 3 && !auditedNodes.contains(nodeId)) {
-                    System.out.println("🚨 ANOMALIE CONFIRMÉE sur " + nodeId + " - Déploiement agent mobile");
-                    deployMobileAgent(nodeId);
-                    auditedNodes.add(nodeId);
-                    
-                    // Réinitialiser le compteur après déploiement
-                    alert.count = 0;
-                }
+                System.out.println("Node " + nodeId + ": " + alert.count + " alertes totales");
             }
+            
+            // Cleanup: supprimer les alertes anciennes (> 5 minutes)
+            long now = System.currentTimeMillis();
+            alerts.entrySet().removeIf(entry -> 
+                (now - entry.getValue().lastSeen) > 300000
+            );
         }
     }
     
@@ -147,16 +142,44 @@ public class CentralServerAgent extends Agent {
         }
     }
     
+    // VÉRIFICATION IMMÉDIATE après chaque alerte
+    private void checkAndDeployAgent(String alertContent) {
+        try {
+            String[] parts = alertContent.split(":");
+            if (parts.length < 2) return;
+            
+            String nodeId = parts[1];
+            AlertData alert = alerts.get(nodeId);
+            
+            // Déployer SEULEMENT si: count == 3 AND pas déjà en audit
+            if (alert != null && alert.count == 3 && !auditedNodes.contains(nodeId)) {
+                System.out.println("🚨 ANOMALIE CONFIRMÉE sur " + nodeId + " - Déploiement IMMÉDIAT de l'agent mobile");
+                deployMobileAgent(nodeId);
+                auditedNodes.add(nodeId);
+                
+                // Réinitialiser le compteur pour éviter re-déploiements
+                alert.count = 0;
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur lors de la vérification: " + e.getMessage());
+        }
+    }
+    
     private void processAuditReport(String reportContent) {
         // Parser: "AUDIT_REPORT:node1|Location:Container-node1|Time:...|Status:...|Details:..."
         System.out.println("Traitement du rapport d'audit...");
         
-        // Retirer le nœud de la liste des audités après un certain temps
-        // pour permettre de futures audits si nécessaire
-        String[] parts = reportContent.split("\\|");
-        if (parts.length > 0) {
-            String nodeInfo = parts[0].split(":")[1];
-            System.out.println("✓ Audit de " + nodeInfo + " traité avec succès");
+        try {
+            String[] parts = reportContent.split("\\|");
+            if (parts.length > 0) {
+                String nodeInfo = parts[0].split(":")[1];
+                System.out.println("✓ Audit de " + nodeInfo + " traité avec succès");
+                
+                // Retirer de la liste des audités pour permettre de futurs audits
+                auditedNodes.remove(nodeInfo);
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur lors du traitement du rapport: " + e.getMessage());
         }
     }
     

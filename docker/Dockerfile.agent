@@ -30,5 +30,4 @@ jade.Boot \
 -host $JADE_HOST \
 -port 1099 \
 -container-name Container-$NODE_ID \
--services jade.core.mobility.AgentMobility \
 local-agent-$NODE_ID:agents.LocalAgent\($NODE_ID\)'
