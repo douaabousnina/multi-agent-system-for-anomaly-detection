@@ -1,0 +1,90 @@
+services:
+  # Central JADE server (main container)
+  jade-main-container:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile.server
+    container_name: jade_server
+    hostname: jade-server
+    networks:
+      jade_network:
+        ipv4_address: 172.20.0.10
+    ports:
+      - "1099:1099"   # JADE JICP port
+      - "7778:7778"   # JADE HTTP-MTP
+      - "1100:1100"   # Additional services port
+    volumes:
+      - ../jade-agents/src:/app/src
+      - ../jade-agents/lib:/app/lib
+      - ../database:/app/database
+    environment:
+      - JADE_MAIN=true
+      - JADE_HOST=172.20.0.10
+
+  # Agent nodes
+  agent-node-1:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile.agent
+    container_name: agent_node_1
+    hostname: node1
+    networks:
+      jade_network:
+        ipv4_address: 172.20.0.11
+    volumes:
+      - ../jade-agents/src:/app/src
+      - ../jade-agents/lib:/app/lib
+      - ../monitoring:/app/monitoring
+    environment:
+      - NODE_ID=node1
+      - JADE_HOST=172.20.0.10
+    depends_on:
+      jade-main-container:
+        condition: service_started
+
+  agent-node-2:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile.agent
+    container_name: agent_node_2
+    hostname: node2
+    networks:
+      jade_network:
+        ipv4_address: 172.20.0.12
+    volumes:
+      - ../jade-agents/src:/app/src
+      - ../jade-agents/lib:/app/lib
+      - ../monitoring:/app/monitoring
+    environment:
+      - NODE_ID=node2
+      - JADE_HOST=172.20.0.10
+    depends_on:
+      jade-main-container:
+        condition: service_started
+
+  agent-node-3:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile.agent
+    container_name: agent_node_3
+    hostname: node3
+    networks:
+      jade_network:
+        ipv4_address: 172.20.0.13
+    volumes:
+      - ../jade-agents/src:/app/src
+      - ../jade-agents/lib:/app/lib
+      - ../monitoring:/app/monitoring
+    environment:
+      - NODE_ID=node3
+      - JADE_HOST=172.20.0.10
+    depends_on:
+      jade-main-container:
+        condition: service_started
+
+networks:
+  jade_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
